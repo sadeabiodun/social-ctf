@@ -290,8 +290,7 @@ lstm_pca_reduce = np.stack(lstm_pca_reduce, axis=0)
 np.save(f'results/lstms_tanh-z_pca-k{k}.npy', lstm_pca_reduce)
 
 
-## Compute correlations for PC in comparison to game variable 
-
+# Compute correlations for PC in comparison to game variable 
 from features import get_features
 from scipy.stats import pearsonr
 
@@ -302,27 +301,29 @@ lstm_pca = np.load(f'results/lstms_tanh-z_pca-k{k}.npy')
 
 # Exclude degenerate features from analysis 
 feature_set = ['position', 'health', 'events']
-all_features, labels = get_features(wrap_f, feature_set=feature_set, map_id=map_id,
-                                    matchup_id=matchup_ids, player_id=slice(None),
+all_features, labels = get_features(wrap_f, feature_set=feature_set,
+                                    map_id=map_id, matchup_id=matchup_ids,
+                                    player_id=slice(None),
                                     repeat_id=slice(None))
 
 features_exclude = []
 for label in labels: 
     features = all_features[..., np.array(labels) == label]
     n_nonzeros = np.sum(np.nonzero(features))
-    print(f'checking {label} for all nonzeros; found {n_nonzeros} nonzeros')
+    print(f'checking {label} for all nonzeros; "found {n_nonzeros} nonzeros')
     if n_nonzeros == 0:
         features_exclude.append(label)
         print(f'excluding {label}')
         
 labels = [l for l in labels if l not in features_exclude]  
         
-# Define a single variable to pull stats for (this may be redundant, review later)
-
+# Define a single variable to pull stats from
+# (this may be redundant, review later)
 pca_corrs = {}
 for game_var in labels:
     features = all_features[..., np.array(labels) == game_var]
-    # code is breaking above because new labels code that removes degenerative features does not match dimensions of 
+    # code is breaking above because new labels code that
+    # removes degenerative features does not match dimensions of 
     feature_shape = features.shape[:-2]
     pca_corrs[game_var] = np.full(feature_shape + (k,), np.nan)
  
@@ -341,11 +342,10 @@ for game_var in labels:
 # Save dictionary 
 np.save(f'results/lstm_pca-k{k}_feature_correlations.npy', pca_corrs)
 
-## Plot
 
-pca_corrs = np.load('results/lstm_pca-k100_feature_correlations.npy', allow_pickle=True)
-
-# Summarize PCA Corrs across players and repeats
+# Summarize PCA correlations across players and repeats
+pca_corrs = np.load('results/lstm_pca-k100_feature_correlations.npy',
+                    allow_pickle=True)
 pca_corr_means = []
 
 for game_var in pca_corrs:
@@ -356,10 +356,65 @@ pca_corr_means = np.stack(pca_corr_means, 1)
 assert pca_corr_means.shape[1] == len(labels)
 
 pc_id = 2
-
 for pc_id in np.arange(1,10):
     plt.matshow(pca_corr_means[..., pc_id], cmap='RdBu_r')
     plt.yticks([0, 1, 2, 3], ['A','B','C','D'])
     plt.xticks(np.arange(pca_corr_means.shape[1]), labels, rotation=90);
     plt.title(f'PCA Feature Correlations for PC{pc_id}')
     plt.colorbar()
+
+
+# Look at some properties of the PCA-reduced LSTMs
+lstm_pca_reduce = np.load(f'results/lstms_tanh-z_pca-k{k}_ica.npy')
+
+# Look at ISC of PCs for individual games
+matchup, repeat = 0, 0
+
+n_pcs = 10
+fig, axs = plt.subplots(2, 5, figsize=(25, 8))
+for pc, ax in zip(np.arange(n_pcs), axs.ravel()):
+    corr = np.corrcoef(lstm_pca_reduce[matchup, repeat, ..., pc])
+    sns.heatmap(corr, square=True, annot=True, vmin=-1, vmax=1,
+                cmap='RdBu_r', xticklabels=False, yticklabels=False,
+                fmt='.2f', ax=ax, cbar=cbar)
+    ax.set_title(f'PC{pc + 1}')
+
+
+# Look at ISC of PCs averaged across games
+matchup = 0
+n_repeats = 8
+
+n_pcs = 10
+fig, axs = plt.subplots(2, 5, figsize=(25, 8))
+for pc, ax in zip(np.arange(n_pcs), axs.ravel()):
+    corr = np.mean([np.corrcoef(lstm_pca_reduce[matchup, r, ..., pc])
+                    for r in np.arange(n_repeats)], axis=0)
+    sns.heatmap(corr, square=True, annot=True, vmin=-1, vmax=1,
+                cmap='RdBu_r', xticklabels=False, yticklabels=False,
+                fmt='.2f', ax=ax, cbar=cbar)
+    ax.set_title(f'PC{pc + 1}')
+
+    
+# Difference in cooperative/competitive ISC across PCs
+matchup = 3
+n_repeats = 8
+n_pcs = 100
+
+isc_diffs = {'difference': [], 'PC': [], 'repeat': []}
+for pc in np.arange(n_pcs):
+    corrs = [np.corrcoef(lstm_pca_reduce[matchup, r, ..., pc])
+             for r in np.arange(n_repeats)]
+    diffs = [np.mean(c[[0, 3], [1, 2]]) - np.mean(c[0:2, 2:4])
+             for c in corrs]
+    for r, diff in enumerate(diffs):
+        isc_diffs['difference'].append(diff)
+        isc_diffs['PC'].append(pc + 1)
+        isc_diffs['repeat'].append(r)
+isc_diffs = pd.DataFrame(isc_diffs)
+    
+fig, ax = plt.subplots(figsize=(16, 4))
+sns.barplot(x='PC', y='difference', data=isc_diffs, ax=ax, color='.6')
+ax.set_ylim(-.3, 1)
+ax.set_xticks([0, 19, 39, 59, 79, 99])
+ax.set_ylabel('cooperative – competitive ISC')
+ax.set_title(f'difference in cooperative vs. competitive ISC for 100 ICs (matchup {matchup})');
