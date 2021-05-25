@@ -44,9 +44,17 @@ position, position_labels = get_features(wrap_f,
                                          matchup_id=matchup_id,
                                          repeat_id=repeat_id,
                                          player_id=player_id)
+
+# Ignore z-position for now
+position = position[..., :2]
+
+repeat = 0 
+position = position[repeat, ...]
+
 # Compute Euclidean distance over time for all payers of players
 n_players = 4
 proximities = []
+
 for pair in combinations(np.arange(n_players), 2):
     proximities.append(np.sqrt(np.sum((position[pair[0], ...] -
                                        position[pair[1], ...]) ** 2,
@@ -56,12 +64,12 @@ proximities = np.array(proximities).T
 # Get proximities for cooperating and competing agents
 coop_ids, comp_ids = [0, 5], [1, 2, 3, 4]
 
+
 prox_coop = proximities[..., coop_ids]
 prox_comp = proximities[..., comp_ids]
 
 
-# Ignore z-position for now
-position = position[..., :2]
+
 
 """The thing about this function is it has to incorporate the following
 1. Following for longer than x amount of time (time course + position)
